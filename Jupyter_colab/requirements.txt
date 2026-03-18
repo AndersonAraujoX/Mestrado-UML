@@ -1,0 +1,9 @@
+pennylane
+qiskit
+qiskit-aer
+qutip
+numpy
+scipy
+matplotlib
+seaborn
+pandas
