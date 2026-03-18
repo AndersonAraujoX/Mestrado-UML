@@ -1,4 +1,4 @@
-#!/home/anderson/Documents/Mestrado/Códigos/refatorado_2/Jupyter_colab/venv/bin/python3
+#!/home/anderson/Documents/Mestrado/Códigos/Mestrado-UML/Jupyter_colab/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys

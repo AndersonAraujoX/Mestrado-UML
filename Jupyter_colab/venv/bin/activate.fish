@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV '/home/anderson/Documents/Mestrado/Códigos/refatorado_2/Jupyter_colab/venv'
+set -gx VIRTUAL_ENV '/home/anderson/Documents/Mestrado/Códigos/Mestrado-UML/Jupyter_colab/venv'
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH
