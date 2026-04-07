@@ -43,7 +43,7 @@ from qhe_cycle_qtd_quantities import compute_single_qubit_heating, compute_avera
 
 from src.core.topologies import PairBathTopology, PairCorrTopology, PairWorkTopology
 from src.core.quantum_system import QuantumThermalMachine
-from src.core.operations import ThermalizationOperation, ImaginaryParametricCorrelation, TrotterizedHeisenbergXYZ, TrotterizedHeisenbergXX
+from src.core.operations import ThermalizationOperation, ImaginaryParametricCorrelation, TrotterizedHeisenbergXYZ, TrotterizedHeisenbergXX, TrotterizedHeisenbergXY
 from src.optimization.ergotropy_optimizer import ErgotropyOptimizer
 import qutip as qt
 
@@ -65,6 +65,29 @@ def ergotropy_int_troca(H_AB,params_ther,params_corr,pair_corr,pair_work, N):
 
   return ergo, params
 
+def ergotropy_XY(H_AB,params_ther,params_corr,pair_corr,pair_work, N):
+  """
+  Calcula a ergotropia considerando a evolução de trabalho com Heisenberg XY.
+  Atualizado para a nova arquitetura orientada a objetos (QuantumThermalMachine e ErgotropyOptimizer).
+  O array de parâmetros para otimização foi mantido com tamanho 2*len(pair_work) para as interações XX e YY conjugadas.
+  """
+  machine = QuantumThermalMachine(num_qubits=N)
+  thermal_op = ThermalizationOperation(params_ther[0], params_ther[1])
+  corr_op = ImaginaryParametricCorrelation(pair_corr, params_corr)
+  
+  initial_state_vec = machine.get_initial_state(thermal_op, corr_op)
+  rho = qt.Qobj(initial_state_vec)
+
+  optimizer = ErgotropyOptimizer(
+      rho0=rho, H_i=H_AB, H_f=H_AB, num_qubits=N, 
+      learning_rate=0.005, num_epochs=10000, tol=0.0000001
+  )
+
+  initial_params = np.random.random(2*len(pair_work))
+  params, loss_vec, ergo = optimizer.optimize(TrotterizedHeisenbergXY, pair_work, initial_params)
+
+  return ergo, params
+  
 def ergotropy_XX(H_AB,params_ther,params_corr,pair_corr,pair_work, N):
   machine = QuantumThermalMachine(num_qubits=N)
   thermal_op = ThermalizationOperation(params_ther[0], params_ther[1])
@@ -103,53 +126,62 @@ def process_single_eb(eb_index, e_B, N, e_A, beta_A, beta_Bs, pair_corr, pair_wo
     vec_H_AB = vec_H_AB[1:-1]
 
     H_AB = many_body_hamiltonian_from_local_operators(N - 2, vec_H_AB)
+    #print(H_AB)
+    results_XX_for_eb = np.zeros(len(beta_Bs))
+    results_int_for_eb = np.zeros(len(beta_Bs))
 
-    # Listas para armazenar os resultados de cada repetição
-    results_Ei_per_repetition = {bb: [] for bb in range(len(beta_Bs))}
-    results_Ef_per_repetition = {bb: [] for bb in range(len(beta_Bs))}
+    # 1. Crie um array para armazenar os parâmetros (o tamanho é len(pair_work))
+    num_params_xx = len(pair_work)
+    results_params_XX_for_eb = np.zeros((len(beta_Bs), num_params_xx))
+    num_params_int = 2*len(pair_work) # Changed from 2*len(pair_work)
+    results_params_int_for_eb = np.zeros((len(beta_Bs), num_params_int))
 
-    for _ in range(num_repetitions): # Loop para as repetições
-        for bb, beta_B in enumerate(beta_Bs):
+    for bb, beta_B in enumerate(beta_Bs):
 
-            #definições
-            b_B = beta_B
-            b_A = beta_A
+        #definições
+        b_B = beta_B
+        b_A = beta_A
 
-            theta_A, theta_B = 2 * np.arctan(np.exp(e_B * b_B * 0.5)), 2 * np.arctan(np.exp(e_A * b_A * 0.5))
+        theta_A, theta_B = 2 * np.arctan(np.exp(e_B * b_B * 0.5)), 2 * np.arctan(np.exp(e_A * b_A * 0.5))
 
-            sz = np.array([[1, 0], [0, -1]])
+        sz = np.array([[1, 0], [0, -1]])
 
-            H_A = -0.5 * e_A * sz
-            H_B = -0.5 * e_B * sz
+        H_A = -0.5 * e_A * sz
+        H_B = -0.5 * e_B * sz
 
-            Za = np.trace(expm(-b_A * H_A))
-            Zb = np.trace(expm(-b_B * H_B))
+        Za = np.trace(expm(-b_A * H_A))
+        Zb = np.trace(expm(-b_B * H_B))
 
-            p_a = np.exp(-e_A * b_A / 2) / Za
-            p_b = np.exp(-e_B * b_B / 2) / Zb
+        p_a = np.exp(-e_A * b_A / 2) / Za
+        p_b = np.exp(-e_B * b_B / 2) / Zb
 
-            p00 = p_a * p_b
-            p01 = p_a * (1 - p_b)
-            p10 = p_b * (1 - p_a)
-            p11 = (1 - p_b) * (1 - p_a)
+        p00 = p_a * p_b
+        p01 = p_a * (1 - p_b)
+        p10 = p_b * (1 - p_a)
+        p11 = (1 - p_b) * (1 - p_a)
 
+        a = 1 / (Za * Zb)
+
+        numero1 = 2 * a / (p00 - p10)
+        numero2 = 2 * a / (p01 - p11)
+
+        if abs(numero1) > 1:
             numero1 = 1
-
+        if abs(numero2) > 1:
             numero2 = 1
 
-            theta, phi = np.arcsin(numero1) / 2, np.arcsin(numero2) / 2
+        theta, phi = np.arcsin(numero1) / 2, np.arcsin(numero2) / 2
 
-            # Certifique-se de que params_work tenha as dimensões corretas
-            # Otimização feita com 3*len(pair_work) para int_troca, e len(pair_work) para XX
-            # Aqui, estamos usando parametros_int, que deve ter 3*len(pair_work)
-            current_params_work = list(parametros_work[bb][eb_index])
+        ws_xx,params_xx = ergotropy_XX(H_AB, [theta_A, theta_B], [theta, phi] * len(pair_corr), pair_corr, pair_work)
+        ws_int,params_int = ergotropy_XY(H_AB, [theta_A, theta_B], [theta, phi] * len(pair_corr), pair_corr, pair_work)
 
-            w_i, w_f = work_shot(H_AB, [theta_A, theta_B], [theta, phi] * len(pair_corr), pair_corr, current_params_work, pair_work, e_B)
+        results_XX_for_eb[bb] = ws_xx
+        results_int_for_eb[bb] = ws_int
 
-            results_Ei_per_repetition[bb].append(w_i)
-            results_Ef_per_repetition[bb].append(w_f)
-            
-    return eb_index, results_Ei_per_repetition, results_Ef_per_repetition
+        results_params_int_for_eb[bb,:] = params_int
+        results_params_XX_for_eb[bb,:] = params_xx
+
+    return eb_index, results_XX_for_eb, results_int_for_eb,results_params_XX_for_eb, results_params_int_for_eb
 
 if __name__ == "__main__":
     beta_A = 1
